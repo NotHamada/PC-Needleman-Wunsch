@@ -104,7 +104,7 @@ int tamSeqMaior=6,  /* tamanho da sequencia maior, inicializado como 6 */
    G 2 0 0 1 0
    C 3 0 0 0 1
 */
-int matrizPesos[4][4]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+int matrizPesos[4][4]={1z,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
 
 
 /* leitura do tamanho da sequencia maior */
@@ -345,7 +345,7 @@ void mostraSequencias(void)
    demais linhas e colunas s�o associadas as bases da seqMenor e da
    SeqMaior, respectivamente. */
 
-void geraMatrizScores(void)
+void geraMatrizScores(void) /* TODO - fazer paralelismo aqui */
 { int lin, col, peso, linMaior, colMaior, maior;
 
   printf("\nGeracao da Matriz de Scores:\n");
@@ -465,7 +465,7 @@ void mostraAlinhamentoGlobal(void)
    retornada e assim sucessivamente, ateh alcancar a celula inicial.
    O alinhamento global � composto por duas sequencias alinhaMenor e
    alinhaMaior. */
-void traceBack()
+void traceBack() /* TODO - fazer paralelismo aqui */
 { int tbLin, tbCol, peso, pos, posAux, aux, i;
 
   printf("\nGeracao do Alinhamento Global:\n");
@@ -582,7 +582,7 @@ void trataOpcao(int op)
             break;
     case 4: printf("\nPenalidade = %d",penalGap);
             break;
-    case 5: printf("\nDeseja Definicao: <1>MANUAL ou <2>ALEATORIA? = ");
+    case 5: printf("\nDeseja Definicao: <1>MANUAL ou <2>ALEATORIA? = "); /* TODO - leitura do arquivo deve ser inserida aqui */
             scanf("%d",&resp);
             scanf("%c",&enter); /* remove o enter */
             if (resp==1)
