@@ -71,6 +71,7 @@ char seqMaior[maxSeq]={A,A,C,T,T,A},
      alinhaMaior[maxSeq],
      alinhaMenor[maxSeq];
 
+
 /* matrizScores representa a matriz de scores que sera preenchida
    pelo metodo. A matriz, ao final de seu preenchimento, permitira
    obter o melhor alinhamento global entre as sequencias seqMaior e
@@ -104,7 +105,71 @@ int tamSeqMaior=6,  /* tamanho da sequencia maior, inicializado como 6 */
    G 2 0 0 1 0
    C 3 0 0 0 1
 */
-int matrizPesos[4][4]={1z,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+int matrizPesos[4][4]= {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+
+/* leitura de arquivo que contem as sequências */
+void leSequenciasDeArquivo(char* fileName) {
+    FILE *file = fopen(fileName, "r");
+    if (file == NULL) {
+        printf("Erro ao abrir o arquivo %s.\n", fileName);
+        exit(1);
+    }
+
+    char buffer[maxSeq + 2]; // Buffer para leitura incluindo o newline e null terminator
+
+    // Leitura da sequência maior
+    if (fgets(buffer, sizeof(buffer), file) != NULL) {
+        tamSeqMaior = strlen(buffer);
+        if (buffer[tamSeqMaior - 1] == '\n') {
+            buffer[tamSeqMaior - 1] = '\0';
+            tamSeqMaior--;
+        }
+        for (int i = 0; i < tamSeqMaior; i++) {
+            switch (buffer[i]) {
+                case 'A': seqMaior[i] = A; break;
+                case 'T': seqMaior[i] = T; break;
+                case 'G': seqMaior[i] = G; break;
+                case 'C': seqMaior[i] = C; break;
+                default:
+                    printf("Caractere inválido na sequência maior: %c\n", buffer[i]);
+                    fclose(file);
+                    exit(1);
+            }
+        }
+    } else {
+        printf("Erro ao ler a sequência maior do arquivo %s.\n", fileName);
+        fclose(file);
+        exit(1);
+    }
+
+    // Leitura da sequência menor
+    if (fgets(buffer, sizeof(buffer), file) != NULL) {
+        tamSeqMenor = strlen(buffer);
+        if (buffer[tamSeqMenor - 1] == '\n') {
+            buffer[tamSeqMenor - 1] = '\0';
+            tamSeqMenor--;
+        }
+        for (int i = 0; i < tamSeqMenor; i++) {
+            switch (buffer[i]) {
+                case 'A': seqMenor[i] = A; break;
+                case 'T': seqMenor[i] = T; break;
+                case 'G': seqMenor[i] = G; break;
+                case 'C': seqMenor[i] = C; break;
+                default:
+                    printf("Caractere inválido na sequência menor: %c\n", buffer[i]);
+                    fclose(file);
+                    exit(1);
+            }
+        }
+    } else {
+        printf("Erro ao ler a sequência menor do arquivo %s.\n", fileName);
+        fclose(file);
+        exit(1);
+    }
+
+    fclose(file);
+}
+
 
 
 /* leitura do tamanho da sequencia maior */
@@ -339,6 +404,7 @@ void mostraSequencias(void)
   printf("\n");
 }
 
+
 /* geraMatrizScores gera a matriz de scores. A matriz de scores tera
    tamSeqMenor+1 linhas e tamSeqMaior+1 colunas. A linha 0 e a coluna
    0 s�o adicionadas para representar gaps e conter penalidades. As
@@ -552,7 +618,7 @@ int menuOpcao(void)
     printf("\n<02> Mostrar Matriz de Pesos");
     printf("\n<03> Ler Penalidade de Gap");
     printf("\n<04> Mostrar Penalidade");
-    printf("\n<05> Definir Sequencias Genomicas");
+    printf("\n<05> Definir Sequencias Genomicas (Manual, Aleatoria ou Arquivo)");
     printf("\n<06> Mostrar Sequencias");
     printf("\n<07> Gerar Matriz de Scores");
     printf("\n<08> Mostrar Matriz de Scores");
@@ -571,6 +637,7 @@ int menuOpcao(void)
 void trataOpcao(int op)
 { int resp;
   char enter;
+  char fileName[100];
 
   switch (op)
   {
@@ -582,18 +649,24 @@ void trataOpcao(int op)
             break;
     case 4: printf("\nPenalidade = %d",penalGap);
             break;
-    case 5: printf("\nDeseja Definicao: <1>MANUAL ou <2>ALEATORIA? = "); /* TODO - leitura do arquivo deve ser inserida aqui */
+    case 5: printf("\nDeseja Definicao: <1>MANUAL, <2>ALEATORIA? ou <3>ARQUIVO= "); /* TODO - leitura do arquivo deve ser inserida aqui */
             scanf("%d",&resp);
             scanf("%c",&enter); /* remove o enter */
             if (resp==1)
             {
               leSequencias();
             }
-            else
+            else if (resp==2)
             { leTamMaior();
               leTamMenor();
               grauMuta=leGrauMutacao();
               geraSequencias();
+            }
+            else if (resp==3)
+            {
+              printf("Digite o nome do arquivo das sequencias: ");
+              scanf("%s", fileName);
+              leSequenciasDeArquivo(fileName);
             }
             break;
     case 6: mostraSequencias();
