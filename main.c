@@ -49,6 +49,13 @@ BREVE DESCRI��O:
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <pthread.h>
+
+typedef struct {
+    int inicioLinha;
+    int fimLinha;
+} DadosThread;
+
 
 #define A 0
 #define T 1
@@ -57,6 +64,7 @@ BREVE DESCRI��O:
 #define sair 11
 
 #define maxSeq 1000
+#define MAXTHREADS 20
 
 /* baseMapa mapeia indices em caracteres que representam as bases,
    sendo 0='A', 1='T', 2='G', 3='C' e 4='-' representando gap */
@@ -91,8 +99,8 @@ int tamSeqMaior=6,  /* tamanho da sequencia maior, inicializado como 6 */
                        sofre algumas trocas de bases */
     diagScore,      /* score da diagonal anterior da matriz de scores */
     linScore,       /* score da linha anterior da matriz de scores */
-    colScore;       /* score da coluna anterior da matriz de scores */
-
+    colScore,       /* score da coluna anterior da matriz de scores */
+    numthreads;
 /*  matrizPesos contem os pesos do pareamento de bases. Estruturada e
     inicializada conforme segue, onde cada linha ou coluna se refere a
     uma das bases A, T, G ou C. Considera-se a primeira dimensao da
@@ -411,66 +419,87 @@ void mostraSequencias(void)
    demais linhas e colunas s�o associadas as bases da seqMenor e da
    SeqMaior, respectivamente. */
 
-void geraMatrizScores(void) /* TODO - fazer paralelismo aqui */
-{ int lin, col, peso, linMaior, colMaior, maior;
+void *preencherMatriz(void *arg) {
+    DadosThread *dados = (DadosThread *)arg;
+    int lin, col, peso;
+    int scoreDiagonal, scoreLinha, scoreColuna;
 
-  printf("\nGeracao da Matriz de Scores:\n");
-  /*  A matriz ser� gerada considerando que ela representa o cruzamento
-      da seqMenor[] associada as linhas e a seqMaior[] associada as
-      colunas. */
+    printf("Thread processando linhas %d a %d\n", dados->inicioLinha, dados->fimLinha);
 
-  /* inicializando a linha de penalidades/gaps */
-  for (col=0; col<=tamSeqMaior; col++)
-    matrizScores[0][col]=-1*(col*penalGap);
+    for (lin = dados->inicioLinha; lin <= dados->fimLinha; lin++) {
+        for (col = 1; col <= tamSeqMaior; col++) {
+            peso = matrizPesos[seqMenor[lin - 1]][seqMaior[col - 1]];
+            scoreDiagonal = matrizScores[lin - 1][col - 1] + peso;
+            scoreLinha = matrizScores[lin][col - 1] - penalGap;
+            scoreColuna = matrizScores[lin - 1][col] - penalGap;
 
-  /* inicializando a coluna de penalidades/gaps */
-  for (lin=0; lin<=tamSeqMenor; lin++)
-    matrizScores[lin][0]=-1*(lin*penalGap);
-
-  /* calculando os demais scores, percorrendo todas as posicoes
-     da matriz, linha por linha, coluna por coluna, aplicando
-     a seguinte f�rmula:
-                             / f(lin-1,col-1)+matrizPesos[lin,col]
-     f(lin,col) = m�ximo de {  f(lin,col-1)-penalGap
-                             \ f(lin-1,col)-penalGap
-  */
-
-  for (lin=1; lin<=tamSeqMenor; lin++)
-  {
-    for (col=1; col<=tamSeqMaior; col++)
-    {
-      peso=matrizPesos[(int)(seqMenor[lin-1])][(int)(seqMaior[col-1])];
-      diagScore = matrizScores[lin-1][col-1]+peso;
-      linScore = matrizScores[lin][col-1]-penalGap;
-      colScore = matrizScores[lin-1][col]-penalGap;
-
-      if ((diagScore>=linScore)&&(diagScore>=colScore))
-        matrizScores[lin][col]=diagScore;
-      else if (linScore>colScore)
-              matrizScores[lin][col]=linScore;
-           else matrizScores[lin][col]=colScore;
+            if (scoreDiagonal >= scoreLinha && scoreDiagonal >= scoreColuna)
+                matrizScores[lin][col] = scoreDiagonal;
+            else if (scoreLinha > scoreColuna)
+                matrizScores[lin][col] = scoreLinha;
+            else
+                matrizScores[lin][col] = scoreColuna;
+        }
     }
-  }
+    pthread_exit(NULL);
+}
 
-  /* localiza o ultimo maior score, e sua posicao */
+void geraMatrizScores(int numThreads) {
+    pthread_t threads[numThreads];
+    DadosThread dados[numThreads];
+    int i;
+    int linhasPorThread, linhasExtras;
+    int linhaAtual = 1;
 
-  linMaior=1;
-  colMaior=1;
-  maior=matrizScores[1][1];
-  for (lin=1; lin<=tamSeqMenor; lin++)
-  {
-    for (col=1; col<=tamSeqMaior; col++)
-    {
-      if (maior<=matrizScores[lin][col])
-      {
-        linMaior=lin;
-        colMaior=col;
-        maior=matrizScores[lin][col];
-      }
+    printf("\nGeração da Matriz de Scores:\n");
+
+    // Inicializando a linha de penalidades/gaps
+    for (int col = 0; col <= tamSeqMaior; col++)
+        matrizScores[0][col] = -1 * (col * penalGap);
+
+    // Inicializando a coluna de penalidades/gaps
+    for (int lin = 0; lin <= tamSeqMenor; lin++)
+        matrizScores[lin][0] = -1 * (lin * penalGap);
+
+    // Calculando o intervalo de linhas
+    linhasPorThread = (tamSeqMenor + 1) / numThreads;
+    linhasExtras = (tamSeqMenor + 1) % numThreads;
+
+    for (i = 0; i < numThreads; i++) {
+        dados[i].inicioLinha = linhaAtual;
+        dados[i].fimLinha = linhaAtual + linhasPorThread - 1;
+        if (i < linhasExtras) {
+            dados[i].fimLinha++;
+        }
+        linhaAtual = dados[i].fimLinha + 1;
+
+        // Ajustar se a última linha não estiver corretamente atribuída
+        if (i == numThreads - 1 && dados[i].fimLinha < tamSeqMenor) {
+            dados[i].fimLinha = tamSeqMenor;
+        }
+
+        pthread_create(&threads[i], NULL, preencherMatriz, (void *)&dados[i]);
     }
-  }
-  printf("\nMatriz de Scores Gerada.");
-  printf("\nUltimo Maior Score = %d na celula [%d,%d]", maior, linMaior, colMaior);
+
+    for (i = 0; i < numThreads; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    // Localizando o último maior score e sua posição
+    int linMaior = 1;
+    int colMaior = 1;
+    int maior = matrizScores[1][1];
+    for (int lin = 1; lin <= tamSeqMenor; lin++) {
+        for (int col = 1; col <= tamSeqMaior; col++) {
+            if (maior <= matrizScores[lin][col]) {
+                linMaior = lin;
+                colMaior = col;
+                maior = matrizScores[lin][col];
+            }
+        }
+    }
+    printf("\nMatriz de Scores Gerada.");
+    printf("\nÚltimo Maior Score = %d na célula [%d,%d]", maior, linMaior, colMaior);
 }
 
 
@@ -671,7 +700,14 @@ void trataOpcao(int op)
             break;
     case 6: mostraSequencias();
             break;
-    case 7: geraMatrizScores();
+    case 7: printf("Digite o numero de threads utilizadas para gerar a Matriz => : ");
+            scanf("%i", &numthreads);
+            while((numthreads <= 0)||(numthreads>MAXTHREADS))
+            {
+              printf("Digite um numero valido de threads ( 0 > numthreads > %i) => ", MAXTHREADS);
+              scanf("%i", &numthreads);
+            }
+            geraMatrizScores(numthreads);
             break;
     case 8: mostraMatrizScores();
             break;
