@@ -608,110 +608,126 @@ void mostraAlinhamentoGlobal(void)
    de uma estrategia de desempate, pelo fato de ter havido empate na pontuacao
    dos nohs vizinhos. Alem disso, alinhamentos parciais tambem podem ser obtidos
    com traceback iniciado a partir de qualquer c�lula */
-void traceBack(int tipo)
-{ int tbLin, tbCol, peso, pos, posAux, aux, i;
 
-  if (tipo==1)
-  { printf("\nGeracao do Primeiro Maior Alinhamento Global:\n");
-    tbLin=linPMaior;
-    tbCol=colPMaior;
-  }
-  else {
-    printf("\nGeracao do Ultimo Maior Alinhamento Global:\n");
-    tbLin=linUMaior;
-    tbCol=colUMaior;
-  }
+int k = 1;  // Número de alinhamentos que o usuário deseja gerar
+typedef struct {
+    int alinhaGMaior[maxSeq];
+    int alinhaGMenor[maxSeq];
+    int tamAlinha;
+} Alinhamento;
 
-  pos=0;
-  do
-  {
-    // a seguir verifica o escore do elemento [tbLin, tbCol]
+Alinhamento resultados[MAXTHREADS];
+int thread_count = 0;
+pthread_mutex_t mutex;
 
-    peso=matrizPesos[(seqMenor[tbLin-1])][(seqMaior[tbCol-1])];
-    escoreDiag = matrizEscores[tbLin-1][tbCol-1]+peso;
-    escoreLin = matrizEscores[tbLin][tbCol-1]-penalGap;
-    escoreCol = matrizEscores[tbLin-1][tbCol]-penalGap;
 
-      if ((escoreDiag>escoreLin)&&(escoreDiag>escoreCol)) // trocado >= por >
-      {
-        if (seqMenor[tbLin-1]!=seqMaior[tbCol-1])
-        {   /* O escore da diagonal venceu, mas os elementos correspondentes entre
-               as sequencias menor e maior sao diferentes. Nesse caso, surge um
-               gap duplo */
+void* traceBack(void* arg) {
+    int index = *(int*)arg;
+    int tbLin = linPMaior;
+    int tbCol = colPMaior;
+    int pos = 0;
+    int peso, escoreDiag, escoreLin, escoreCol;
 
-            printf("\nALERTA no TraceBack: Pos = %d Lin = %d e Col = %d\n", pos, tbLin, tbCol);
+    Alinhamento* resultado = &resultados[index];
 
-            alinhaGMenor[pos]=X;
-            alinhaGMaior[pos]=seqMaior[tbCol-1];
-            tbCol--;
-            pos++;
+    do {
+        peso = matrizPesos[(seqMenor[tbLin-1])][(seqMaior[tbCol-1])];
+        escoreDiag = matrizEscores[tbLin-1][tbCol-1] + peso;
+        escoreLin = matrizEscores[tbLin][tbCol-1] - penalGap;
+        escoreCol = matrizEscores[tbLin-1][tbCol] - penalGap;
 
-            alinhaGMenor[pos]=seqMenor[tbLin-1];
-            alinhaGMaior[pos]=X;
+        if (escoreDiag >= escoreLin && escoreDiag >= escoreCol) {
+            resultado->alinhaGMenor[pos] = seqMenor[tbLin-1];
+            resultado->alinhaGMaior[pos] = seqMaior[tbCol-1];
             tbLin--;
-            pos++;
-
-        }
-        else {
-            alinhaGMenor[pos]=seqMenor[tbLin-1];
-            tbLin--;
-            alinhaGMaior[pos]=seqMaior[tbCol-1];
             tbCol--;
-            pos++;
+        } else if (escoreLin >= escoreCol) {
+            resultado->alinhaGMenor[pos] = X;
+            resultado->alinhaGMaior[pos] = seqMaior[tbCol-1];
+            tbCol--;
+        } else {
+            resultado->alinhaGMenor[pos] = seqMenor[tbLin-1];
+            resultado->alinhaGMaior[pos] = X;
+            tbLin--;
         }
-      }
-      else if (escoreLin>=escoreCol)
-           {
-              alinhaGMenor[pos]=X;
-              alinhaGMaior[pos]=seqMaior[tbCol-1];
-              tbCol--;
-              pos++;
-           }
-           else
-           {
-              alinhaGMenor[pos]=seqMenor[tbLin-1];
-              alinhaGMaior[pos]=X;
-              tbLin--;
-              pos++;
-           }
+        pos++;
+    } while (tbLin > 0 && tbCol > 0);
 
-  } while ((tbLin!=0)&&(tbCol!=0));
+    // Adicionar gaps restantes
+    while (tbLin > 0) {
+        resultado->alinhaGMenor[pos] = seqMenor[tbLin-1];
+        resultado->alinhaGMaior[pos] = X;
+        tbLin--;
+        pos++;
+    }
+    while (tbCol > 0) {
+        resultado->alinhaGMenor[pos] = X;
+        resultado->alinhaGMaior[pos] = seqMaior[tbCol-1];
+        tbCol--;
+        pos++;
+    }
+    resultado->tamAlinha = pos;
 
-  /* descarrega o restante de gaps da linha 0, se for o caso */
-  while (tbLin>0)
-  {
-    alinhaGMenor[pos]=seqMenor[tbLin-1];
-    alinhaGMaior[pos]=X;
-    tbLin--;
-    pos++;
-  }
+    // Inverter o alinhamento para a ordem correta
+    for (int i = 0; i < pos / 2; i++) {
+        int aux = resultado->alinhaGMenor[i];
+        resultado->alinhaGMenor[i] = resultado->alinhaGMenor[pos-i-1];
+        resultado->alinhaGMenor[pos-i-1] = aux;
 
-  /* descarrega o restante de gaps da coluna 0, se for o caso */
-  while (tbCol>0)
-  {
-    alinhaGMenor[pos]=X;
-    alinhaGMaior[pos]=seqMaior[tbCol-1];
-    tbCol--;
-    pos++;
-  }
+        aux = resultado->alinhaGMaior[i];
+        resultado->alinhaGMaior[i] = resultado->alinhaGMaior[pos-i-1];
+        resultado->alinhaGMaior[pos-i-1] = aux;
+    }
 
-  tamAlinha=pos;
-
-  /* o alinhamento foi feito de tras para frente e deve ser
-     invertido, conforme segue */
-  for (i=0;i<(tamAlinha/2);i++)
-  {
-    aux=alinhaGMenor[i];
-    alinhaGMenor[i]=alinhaGMenor[tamAlinha-i-1];
-    alinhaGMenor[tamAlinha-i-1]=aux;
-
-    aux=alinhaGMaior[i];
-    alinhaGMaior[i]=alinhaGMaior[tamAlinha-i-1];
-    alinhaGMaior[tamAlinha-i-1]=aux;
-  }
-
-  printf("\nAlinhamento Global Gerado.");
+    pthread_mutex_lock(&mutex);
+    thread_count++;
+    pthread_mutex_unlock(&mutex);
+    
+    pthread_exit(NULL);
 }
+
+
+void iniciarTraceBack(int tipo) {
+    pthread_t threads[k];
+    int thread_indices[k];
+
+    pthread_mutex_init(&mutex, NULL);
+
+    for (int i = 0; i < k; i++) {
+        thread_indices[i] = i;
+        pthread_create(&threads[i], NULL, traceBack, &thread_indices[i]);
+    }
+
+    for (int i = 0; i < k; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    for (int i = 0; i < thread_count; i++) {
+        printf("Alinhamento %d:\n", i + 1);
+        for (int j = 0; j < resultados[i].tamAlinha; j++) {
+            printf("%c", mapaBases[resultados[i].alinhaGMaior[j]]);
+        }
+        printf("\n");
+        for (int j = 0; j < resultados[i].tamAlinha; j++) {
+            printf("%c", mapaBases[resultados[i].alinhaGMenor[j]]);
+        }
+        printf("\n");
+    }
+
+    // Copiar o primeiro alinhamento gerado para as variáveis globais
+    if (thread_count > 0) {
+        tamAlinha = resultados[0].tamAlinha;
+        for (int j = 0; j < tamAlinha; j++) {
+            alinhaGMaior[j] = resultados[0].alinhaGMaior[j];
+            alinhaGMenor[j] = resultados[0].alinhaGMenor[j];
+        }
+    }
+
+    pthread_mutex_destroy(&mutex);
+}
+
+
+
 
 /* menu de opcoes fornecido para o usuario */
 int menuOpcao(void)
@@ -789,10 +805,14 @@ void trataOpcao(int op)
             break;
     case 8: mostraMatrizEscores();
             break;
-    case 9: printf("\nDeseja: <1> Primeiro Maior ou <2> Ultimo Maior? = ");
-            scanf("%d",&resp);
-            scanf("%c",&enter); /* remove o enter */
-            traceBack(resp);
+    case 9:
+            printf("Digite o valor de k (máximo %d): ", MAXTHREADS);
+            scanf("%d", &k);
+            if (k > MAXTHREADS) k = MAXTHREADS;
+            printf("\nDeseja: <1> Primeiro Maior ou <2> Ultimo Maior? = ");
+            scanf("%d", &resp);
+            scanf("%c", &enter);
+            iniciarTraceBack(resp);
             break;
     case 10: mostraAlinhamentoGlobal();
             break;
