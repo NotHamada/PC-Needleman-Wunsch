@@ -691,6 +691,7 @@ void iniciarTraceBack(int tipo) {
     pthread_t threads[k];
     int thread_indices[k];
 
+    thread_count = 0; // Resetar a contagem de threads a cada nova execução
     pthread_mutex_init(&mutex, NULL);
 
     for (int i = 0; i < k; i++) {
@@ -700,18 +701,6 @@ void iniciarTraceBack(int tipo) {
 
     for (int i = 0; i < k; i++) {
         pthread_join(threads[i], NULL);
-    }
-
-    for (int i = 0; i < thread_count; i++) {
-        printf("Alinhamento %d:\n", i + 1);
-        for (int j = 0; j < resultados[i].tamAlinha; j++) {
-            printf("%c", mapaBases[resultados[i].alinhaGMaior[j]]);
-        }
-        printf("\n");
-        for (int j = 0; j < resultados[i].tamAlinha; j++) {
-            printf("%c", mapaBases[resultados[i].alinhaGMenor[j]]);
-        }
-        printf("\n");
     }
 
     // Copiar o primeiro alinhamento gerado para as variáveis globais
@@ -724,9 +713,20 @@ void iniciarTraceBack(int tipo) {
     }
 
     pthread_mutex_destroy(&mutex);
+
+    // Mostrar apenas os k alinhamentos únicos, sem duplicações
+    for (int i = 0; i < k; i++) {
+        printf("Alinhamento %d:\n", i + 1);
+        for (int j = 0; j < resultados[i].tamAlinha; j++) {
+            printf("%c", mapaBases[resultados[i].alinhaGMaior[j]]);
+        }
+        printf("\n");
+        for (int j = 0; j < resultados[i].tamAlinha; j++) {
+            printf("%c", mapaBases[resultados[i].alinhaGMenor[j]]);
+        }
+        printf("\n");
+    }
 }
-
-
 
 
 /* menu de opcoes fornecido para o usuario */
