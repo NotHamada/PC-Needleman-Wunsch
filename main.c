@@ -453,7 +453,7 @@ void* preenchematriz(void* arg) {
     int lin, col, peso;
     int escoreDiag, escoreLin, escoreCol;
     static int linha_atual = 1; // Índice global de linha, compartilhado entre threads
-
+	
     while (1) {
         pthread_mutex_lock(data->mutex);
         lin = linha_atual++;
@@ -543,6 +543,45 @@ void geraMatrizEscores(int K) {
     printf("\nMatriz de escores Gerada.");
     printf("\nPrimeiro Maior escore = %d na celula [%d,%d]", PMaior, linPMaior, colPMaior);
     printf("\nUltimo Maior escore = %d na celula [%d,%d]", UMaior, linUMaior, colUMaior);
+}
+
+void salvaMatrizEmArquivo(const char* nomeArquivo) {
+    FILE* arquivo = fopen(nomeArquivo, "w");
+    if (arquivo == NULL) {
+        perror("Erro ao abrir o arquivo");
+        exit(EXIT_FAILURE);
+    }
+
+    fprintf(arquivo, "Matriz de escores Atual:\n");
+
+    fprintf(arquivo, "%4c%4c", ' ', ' ');
+    for (int i = 0; i <= tamSeqMaior; i++) {
+        fprintf(arquivo, "%4d", i);
+    }
+    fprintf(arquivo, "\n");
+
+    fprintf(arquivo, "%4c%4c%4c", ' ', ' ', '-');
+    for (int i = 0; i < tamSeqMaior; i++) {
+        fprintf(arquivo, "%4c", mapaBases[(seqMaior[i])]);
+    }
+    fprintf(arquivo, "\n");
+
+    fprintf(arquivo, "%4c%4c", '0', '-');
+    for (int col = 0; col <= tamSeqMaior; col++) {
+        fprintf(arquivo, "%4d", matrizEscores[0][col]);
+    }
+    fprintf(arquivo, "\n");
+
+    for (int lin = 1; lin <= tamSeqMenor; lin++) {
+        fprintf(arquivo, "%4d%4c", lin, mapaBases[(seqMenor[lin - 1])]);
+        for (int col = 0; col <= tamSeqMaior; col++) {
+            fprintf(arquivo, "%4d", matrizEscores[lin][col]);
+        }
+        fprintf(arquivo, "\n");
+    }
+
+    fclose(arquivo);
+    printf("Matriz de scores salva no arquivo '%s'\n", nomeArquivo);
 }
 
 /* imprime a matriz de escores de acordo */
@@ -686,7 +725,6 @@ void* traceBack(void* arg) {
     pthread_exit(NULL);
 }
 
-
 void iniciarTraceBack(int tipo) {
     pthread_t threads[k];
     int thread_indices[k];
@@ -802,6 +840,7 @@ void trataOpcao(int op)
               scanf("%i", &numthreads);
             }
             geraMatrizEscores(numthreads);
+            salvaMatrizEmArquivo("matriz_escores.txt");
             break;
     case 8: mostraMatrizEscores();
             break;
