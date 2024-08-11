@@ -659,9 +659,15 @@ Alinhamento resultados[MAXTHREADS];
 int thread_count = 0;
 pthread_mutex_t mutex;
 
+typedef struct {
+    int index;
+    int preferencia; // 0 para diagonal, 1 para cima, 2 para esquerda
+} ThreadArgs;
 
 void* traceBack(void* arg) {
-    int index = *(int*)arg;
+    ThreadArgs* tArgs = (ThreadArgs*)arg;
+    int index = tArgs->index;
+    int preferencia = tArgs->preferencia;
     int tbLin = linPMaior;
     int tbCol = colPMaior;
     int pos = 0;
@@ -675,20 +681,48 @@ void* traceBack(void* arg) {
         escoreLin = matrizEscores[tbLin][tbCol-1] - penalGap;
         escoreCol = matrizEscores[tbLin-1][tbCol] - penalGap;
 
-        if (escoreDiag >= escoreLin && escoreDiag >= escoreCol) {
-            resultado->alinhaGMenor[pos] = seqMenor[tbLin-1];
-            resultado->alinhaGMaior[pos] = seqMaior[tbCol-1];
-            tbLin--;
-            tbCol--;
-        } else if (escoreLin >= escoreCol) {
-            resultado->alinhaGMenor[pos] = X;
-            resultado->alinhaGMaior[pos] = seqMaior[tbCol-1];
-            tbCol--;
+        // Escolha com base na preferência
+        if ((escoreDiag <= escoreLin) || (escoreDiag <= escoreCol)) {
+            if (preferencia == 0) {
+                resultado->alinhaGMenor[pos] = seqMenor[tbLin-1];
+                resultado->alinhaGMaior[pos] = seqMaior[tbCol-1];
+                tbLin--;
+                tbCol--;
+                preferencia = (preferencia + index) % 3;
+                printf("Thread %d: Empate, escolha preferencial para diagonal\n", index);
+            } else if (preferencia == 1) {
+                resultado->alinhaGMenor[pos] = X;
+                resultado->alinhaGMaior[pos] = seqMaior[tbCol-1];
+                tbCol--;
+                preferencia = (preferencia + index) % 3;
+                printf("Thread %d: Empate, escolha preferencial para cima\n", index);
+            } else {
+                resultado->alinhaGMenor[pos] = seqMenor[tbLin-1];
+                resultado->alinhaGMaior[pos] = X;
+                tbLin--;
+                
+                printf("Thread %d: Empate, escolha preferencial para esquerda\n", index);
+            }
         } else {
-            resultado->alinhaGMenor[pos] = seqMenor[tbLin-1];
-            resultado->alinhaGMaior[pos] = X;
-            tbLin--;
+            if (escoreDiag >= escoreLin && escoreDiag >= escoreCol) {
+                resultado->alinhaGMenor[pos] = seqMenor[tbLin-1];
+                resultado->alinhaGMaior[pos] = seqMaior[tbCol-1];
+                tbLin--;
+                tbCol--;
+                printf("Thread %d: Escolha para diagonal\n", index);
+            } else if (escoreLin >= escoreCol) {
+                resultado->alinhaGMenor[pos] = X;
+                resultado->alinhaGMaior[pos] = seqMaior[tbCol-1];
+                tbCol--;
+                printf("Thread %d: Escolha para cima\n", index);
+            } else {
+                resultado->alinhaGMenor[pos] = seqMenor[tbLin-1];
+                resultado->alinhaGMaior[pos] = X;
+                tbLin--;
+                printf("Thread %d: Escolha para esquerda\n", index);
+            }
         }
+        
         pos++;
     } while (tbLin > 0 && tbCol > 0);
 
@@ -727,14 +761,22 @@ void* traceBack(void* arg) {
 
 void iniciarTraceBack(int tipo) {
     pthread_t threads[k];
-    int thread_indices[k];
+    ThreadArgs* thread_args = malloc(k * sizeof(ThreadArgs));
+    int* preferencia = malloc(k * sizeof(int));
+    
+    // Inicializar preferências de forma aleatória
+    srand(time(NULL));
+    for (int i = 0; i < k; i++) {
+        preferencia[i] = rand() % 3; // 0 para diagonal, 1 para cima, 2 para esquerda
+    }
 
     thread_count = 0; // Resetar a contagem de threads a cada nova execução
     pthread_mutex_init(&mutex, NULL);
 
     for (int i = 0; i < k; i++) {
-        thread_indices[i] = i;
-        pthread_create(&threads[i], NULL, traceBack, &thread_indices[i]);
+        thread_args[i].index = i;
+        thread_args[i].preferencia = preferencia[i];
+        pthread_create(&threads[i], NULL, traceBack, &thread_args[i]);
     }
 
     for (int i = 0; i < k; i++) {
@@ -752,6 +794,9 @@ void iniciarTraceBack(int tipo) {
 
     pthread_mutex_destroy(&mutex);
 
+    free(thread_args);
+    free(preferencia);
+
     // Mostrar apenas os k alinhamentos únicos, sem duplicações
     for (int i = 0; i < k; i++) {
         printf("Alinhamento %d:\n", i + 1);
@@ -765,8 +810,6 @@ void iniciarTraceBack(int tipo) {
         printf("\n");
     }
 }
-
-
 /* menu de opcoes fornecido para o usuario */
 int menuOpcao(void)
 { int op;
