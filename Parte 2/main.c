@@ -392,102 +392,76 @@ void mostraSequencias(void)
    demais linhas e colunas sao associadas as bases da seqMenor e da
    SeqMaior, respectivamente. */
 
-void geraMatrizEscores(int rank, int size)
+void geraMatrizEscores(int rank, int size, int blockSize)
 {
-  int lin, col, peso;
-  int local_start, local_end, linhas_por_process;
-  int escoreDiag, escoreLin, escoreCol;
+    int lin, col, peso;
+    int local_start, local_end;
+    int escoreDiag, escoreLin, escoreCol;
 
-  // O número de processos exclui o processo 0 (que gerencia)
-  int num_processos = size - 1;
+    // O número de processos exclui o processo 0 (que gerencia)
+    int num_processos = size - 1;
 
-  // Divide as linhas igualmente entre os processos
-  linhas_por_process = tamSeqMenor / num_processos;
-  int resto_linhas = tamSeqMenor % num_processos;
+    // Calcula quantas linhas cada processo deve calcular
+    int linhas_por_process = (tamSeqMenor + num_processos - 1) / num_processos; // Arredondamento para cima
 
-  // Calcula o intervalo de linhas para cada processo
-  if (rank != 0)
-  {
+    // Calcula o intervalo de linhas para cada processo
     local_start = (rank - 1) * linhas_por_process + 1;
     local_end = local_start + linhas_por_process - 1;
 
-    // Distribui o restante das linhas entre os primeiros processos
-    if (rank <= resto_linhas)
-    {
-      local_start += (rank - 1);
-      local_end += rank;
+    // Garante que o último processo não ultrapasse o limite
+    if (local_end > tamSeqMenor)
+        local_end = tamSeqMenor;
+
+    // Inicialização da matriz de escores para o processo 0
+    if (rank == 0) {
+        // Preenche a primeira linha e primeira coluna (penalidades)
+        for (col = 0; col <= tamSeqMaior; col++)
+            matrizEscores[0][col] = -1 * (col * penalGap);
+        for (lin = 0; lin <= tamSeqMenor; lin++)
+            matrizEscores[lin][0] = -1 * (lin * penalGap);
+
+        // Recebe as linhas calculadas dos processos
+        for (int p = 1; p < size; p++) {
+            local_start = (p - 1) * linhas_por_process + 1;
+            local_end = local_start + linhas_por_process - 1;
+
+            if (local_end > tamSeqMenor)
+                local_end = tamSeqMenor;
+
+            // Recebe em blocos para evitar sobrecarregar a comunicação
+            for (int i = local_start; i <= local_end; i += blockSize) {
+                int bloco_size = ((i + blockSize - 1) <= local_end) ? blockSize : (local_end - i + 1);
+                MPI_Recv(&matrizEscores[i][0], bloco_size * (tamSeqMaior + 1), MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            }
+        }
+    } else {
+        // Os outros processos (rank > 0) fazem o cálculo das suas linhas
+
+        // Calcula as linhas atribuídas a este processo
+        for (lin = local_start; lin <= local_end; lin++) {
+            for (col = 1; col <= tamSeqMaior; col++) {
+                peso = matrizPesos[(seqMenor[lin - 1])][(seqMaior[col - 1])];
+                escoreDiag = matrizEscores[lin - 1][col - 1] + peso;
+                escoreLin = matrizEscores[lin][col - 1] - penalGap;
+                escoreCol = matrizEscores[lin - 1][col] - penalGap;
+
+                if ((escoreDiag >= escoreLin) && (escoreDiag >= escoreCol)) {
+                    matrizEscores[lin][col] = escoreDiag;
+                } else if (escoreLin >= escoreCol) {
+                    matrizEscores[lin][col] = escoreLin;
+                } else {
+                    matrizEscores[lin][col] = escoreCol;
+                }
+            }
+
+            // Envia blocos da matriz calculada para o processo 0
+            if ((lin - local_start + 1) % blockSize == 0 || lin == local_end) {
+                int linhas_no_bloco = (lin - local_start + 1) % blockSize == 0 ? blockSize : (lin - local_start + 1);
+                MPI_Send(&matrizEscores[local_start][0], linhas_no_bloco * (tamSeqMaior + 1), MPI_INT, 0, 0, MPI_COMM_WORLD);
+                local_start = lin + 1;
+            }
+        }
     }
-    else
-    {
-      local_start += resto_linhas;
-      local_end += resto_linhas;
-    }
-
-    printf("Processo %d: Calculando linhas de %d a %d\n", rank, local_start, local_end);
-
-    // Recebe a linha anterior ao intervalo do processo (necessária para o cálculo)
-    if (rank > 1)
-    {
-      MPI_Recv(&matrizEscores[local_start - 1][0], tamSeqMaior + 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
-
-    // Calcula a matriz de escores para as linhas atribuídas ao processo
-    for (lin = local_start; lin <= local_end; lin++)
-    {
-      for (col = 1; col <= tamSeqMaior; col++)
-      {
-        peso = matrizPesos[(seqMenor[lin - 1])][(seqMaior[col - 1])];
-        escoreDiag = matrizEscores[lin - 1][col - 1] + peso;
-        escoreLin = matrizEscores[lin][col - 1] - penalGap;
-        escoreCol = matrizEscores[lin - 1][col] - penalGap;
-
-        if ((escoreDiag >= escoreLin) && (escoreDiag >= escoreCol)) // Corrigido para >=
-          matrizEscores[lin][col] = escoreDiag;
-        else if (escoreLin >= escoreCol)
-          matrizEscores[lin][col] = escoreLin;
-        else
-          matrizEscores[lin][col] = escoreCol;
-      }
-    }
-
-    // Envia a última linha calculada para o próximo processo
-    if (rank < num_processos)
-    {
-      MPI_Send(&matrizEscores[local_end][0], tamSeqMaior + 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
-    }
-
-    // Envia as linhas calculadas para o processo 0
-    MPI_Send(&matrizEscores[local_start][0], (local_end - local_start + 1) * (tamSeqMaior + 1), MPI_INT, 0, 0, MPI_COMM_WORLD);
-  }
-  else
-  {
-    // Processo 0 inicializa a matriz de penalidades
-    for (col = 0; col <= tamSeqMaior; col++)
-      matrizEscores[0][col] = -1 * (col * penalGap);
-
-    for (lin = 0; lin <= tamSeqMenor; lin++)
-      matrizEscores[lin][0] = -1 * (lin * penalGap);
-
-    // Recebe as linhas calculadas de cada processo e monta a matriz final
-    for (int p = 1; p < size; p++)
-    {
-      local_start = (p - 1) * linhas_por_process + 1;
-      local_end = local_start + linhas_por_process - 1;
-
-      if (p <= resto_linhas)
-      {
-        local_start += (p - 1);
-        local_end += p;
-      }
-      else
-      {
-        local_start += resto_linhas;
-        local_end += resto_linhas;
-      }
-
-      MPI_Recv(&matrizEscores[local_start][0], (local_end - local_start + 1) * (tamSeqMaior + 1), MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
-  }
 }
 
 /* imprime a matriz de escores de acordo */
@@ -754,48 +728,47 @@ void trataOpcao(int op, int rank, int size)
 /* programa principal */
 void main(int argc, char *argv[])
 {
-  int opcao;
-  int rank, size;
+    int opcao;
+    int rank, size;
+    int blockSize;
 
-  MPI_Init(&argc, &argv);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-  srand(time(NULL));
+    srand(time(NULL));
 
-  if (rank == 0)
-  {
-    do
-    {
-      printf("\n\nPrograma Needleman-Wunsch Paralelo\n");
-      opcao = menuOpcao();
+    if (rank == 0) {
+        // Lê o tamanho do bloco definido pelo usuário
+        printf("\nDigite o tamanho do bloco de envio: ");
+        scanf("%d", &blockSize);
 
-      // Envia a opção para os outros processos
-      for (int i = 1; i < size; i++)
-      {
-        MPI_Send(&opcao, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
-      }
+        do {
+            printf("\n\nPrograma Needleman-Wunsch Paralelo\n");
+            opcao = menuOpcao();
 
-      // Processo 0 gerencia as opções, mas não faz o cálculo
-      trataOpcao(opcao, rank, size);
+            // Envia a opção para os outros processos
+            for (int i = 1; i < size; i++) {
+                MPI_Send(&opcao, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+            }
 
-    } while (opcao != sair);
-  }
-  else
-  {
-    while (1)
-    {
-      MPI_Recv(&opcao, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            // Processo 0 gerencia as opções, mas não faz o cálculo
+            trataOpcao(opcao, rank, size, blockSize);
 
-      if (opcao == sair)
-        break;
+        } while (opcao != sair);
+    } else {
+        // Outros processos aguardam por instruções do processo 0
+        while (1) {
+            MPI_Recv(&opcao, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-      if (opcao == 7)
-      {
-        geraMatrizEscores(rank, size);
-      }
+            if (opcao == sair)
+                break;
+
+            if (opcao == 7) {
+                geraMatrizEscores(rank, size, blockSize);  // Chamada da versão paralela
+            }
+        }
     }
-  }
 
-  MPI_Finalize();
+    MPI_Finalize();
 }
