@@ -691,66 +691,174 @@ int menuOpcao(void)
 }
 
 /* trata a opcao fornecida pelo usuario, executando o modulo pertinente */
-void trataOpcao(int op, int rank, int size)
-{
-  int resp;
-  char enter;
+void trataOpcao(int op, int rank, int size) {
+    int resp;
+    char enter;
+    char fileName[100];
 
-  switch (op)
-  {
-  case 1:
-    leMatrizPesos();
-    break;
-  case 2:
-    mostraMatrizPesos();
-    break;
-  case 3:
-    penalGap = lePenalidade();
-    break;
-  case 4:
-    printf("\nPenalidade = %d", penalGap);
-    break;
-  case 5:
-    printf("\nDeseja Definicao: <1>MANUAL ou <2>ALEATORIA? = ");
-    scanf("%d", &resp);
-    scanf("%c", &enter); /* remove o enter */
-    if (resp == 1)
-    {
-      leSequencias();
+    switch (op) {
+    case 1:
+        leMatrizPesos();
+        break;
+    case 2:
+        mostraMatrizPesos();
+        break;
+    case 3:
+        penalGap = lePenalidade();
+        break;
+    case 4:
+        printf("\nPenalidade = %d", penalGap);
+        break;
+    case 5:
+        printf("\nDeseja Definicao: <1>MANUAL, <2>ALEATORIA ou <3>ARQUIVO? = ");
+        scanf("%d", &resp);
+        scanf("%c", &enter); /* remove o enter */
+        if (resp == 1) {
+            leSequencias();
+        } else if (resp == 2) {
+            leTamMaior();
+            leTamMenor();
+            grauMuta = leGrauMutacao();
+            geraSequencias();
+        } else if (resp == 3) {
+            printf("Digite o nome do arquivo das sequencias: ");
+            scanf("%s", fileName);
+            leSequenciasDeArquivo(fileName);
+        }
+        break;
+    case 6:
+        mostraSequencias();
+        break;
+    case 7:
+        if (rank == 0) {
+            printf("\nGerando matriz de escores em paralelo com MPI...\n");
+        }
+        geraMatrizEscores(rank, size); // Chamada da versão paralela
+
+        if (rank == 0) {
+            salvaMatrizEmArquivo("matriz_escores.txt");
+        }
+        break;
+    case 8:
+        mostraMatrizEscores();
+        break;
+    case 9:
+        printf("\nDeseja: <1> Primeiro Maior ou <2> Ultimo Maior? = ");
+        scanf("%d", &resp);
+        scanf("%c", &enter); /* remove o enter */
+        traceBack(resp);
+        break;
+    case 10:
+        mostraAlinhamentoGlobal();
+        break;
     }
-    else
-    {
-      leTamMaior();
-      leTamMenor();
-      grauMuta = leGrauMutacao();
-      geraSequencias();
-    }
-    break;
-  case 6:
-    mostraSequencias();
-    break;
-  case 7:
-    // Aqui fazemos a distinção de rank para usar a versão MPI
-    if (rank == 0)
-    {
-      printf("\nGerando matriz de escores em paralelo com MPI...\n");
-    }
-    geraMatrizEscores(rank, size); // Chamada da versão paralela
-    break;
-  case 8:
-    mostraMatrizEscores();
-    break;
-  case 9:
-    printf("\nDeseja: <1> Primeiro Maior ou <2> Ultimo Maior? = ");
-    scanf("%d", &resp);
-    scanf("%c", &enter); /* remove o enter */
-    traceBack(resp);
-    break;
-  case 10:
-    mostraAlinhamentoGlobal();
-    break;
-  }
 }
+
+
+/* leitura de arquivo que contem as sequências */
+void leSequenciasDeArquivo(char* fileName) {
+    FILE *file = fopen(fileName, "r");
+    if (file == NULL) {
+        printf("Erro ao abrir o arquivo %s.\n", fileName);
+        exit(1);
+    }
+
+    char buffer[maxSeq + 2]; // Buffer para leitura incluindo o newline e null terminator
+
+    // Leitura da sequência maior
+    if (fgets(buffer, sizeof(buffer), file) != NULL) {
+        tamSeqMaior = strlen(buffer);
+        if (buffer[tamSeqMaior - 1] == '\n') {
+            buffer[tamSeqMaior - 1] = '\0';
+            tamSeqMaior--;
+        }
+        for (int i = 0; i < tamSeqMaior; i++) {
+            switch (buffer[i]) {
+                case 'A': seqMaior[i] = A; break;
+                case 'T': seqMaior[i] = T; break;
+                case 'G': seqMaior[i] = G; break;
+                case 'C': seqMaior[i] = C; break;
+                default:
+                    printf("Caractere inválido na sequência maior: %c\n", buffer[i]);
+                    fclose(file);
+                    exit(1);
+            }
+        }
+    } else {
+        printf("Erro ao ler a sequência maior do arquivo %s.\n", fileName);
+        fclose(file);
+        exit(1);
+    }
+
+    // Leitura da sequência menor
+    if (fgets(buffer, sizeof(buffer), file) != NULL) {
+        tamSeqMenor = strlen(buffer);
+        if (buffer[tamSeqMenor - 1] == '\n') {
+            buffer[tamSeqMenor - 1] = '\0';
+            tamSeqMenor--;
+        }
+        for (int i = 0; i < tamSeqMenor; i++) {
+            switch (buffer[i]) {
+                case 'A': seqMenor[i] = A; break;
+                case 'T': seqMenor[i] = T; break;
+                case 'G': seqMenor[i] = G; break;
+                case 'C': seqMenor[i] = C; break;
+                default:
+                    printf("Caractere inválido na sequência menor: %c\n", buffer[i]);
+                    fclose(file);
+                    exit(1);
+            }
+        }
+    } else {
+        printf("Erro ao ler a sequência menor do arquivo %s.\n", fileName);
+        fclose(file);
+        exit(1);
+    }
+
+    fclose(file);
+}
+
+/* Função para salvar a matriz de escores em um arquivo */
+void salvaMatrizEmArquivo(const char* nomeArquivo) {
+    FILE* arquivo = fopen(nomeArquivo, "w");
+    if (arquivo == NULL) {
+        perror("Erro ao abrir o arquivo");
+        exit(EXIT_FAILURE);
+    }
+
+    fprintf(arquivo, "Matriz de escores Atual:\n");
+
+    fprintf(arquivo, "%4c%4c", ' ', ' ');
+    for (int i = 0; i <= tamSeqMaior; i++) {
+        fprintf(arquivo, "%4d", i);
+    }
+    fprintf(arquivo, "\n");
+
+    fprintf(arquivo, "%4c%4c%4c", ' ', ' ', '-');
+    for (int i = 0; i < tamSeqMaior; i++) {
+        fprintf(arquivo, "%4c", mapaBases[(seqMaior[i])]);
+    }
+    fprintf(arquivo, "\n");
+
+    fprintf(arquivo, "%4c%4c", '0', '-');
+    for (int col = 0; col <= tamSeqMaior; col++) {
+        fprintf(arquivo, "%4d", matrizEscores[0][col]);
+    }
+    fprintf(arquivo, "\n");
+
+    for (int lin = 1; lin <= tamSeqMenor; lin++) {
+        fprintf(arquivo, "%4d%4c", lin, mapaBases[(seqMenor[lin - 1])]);
+        for (int col = 0; col <= tamSeqMaior; col++) {
+            fprintf(arquivo, "%4d", matrizEscores[lin][col]);
+        }
+        fprintf(arquivo, "\n");
+    }
+
+    fclose(arquivo);
+    printf("Matriz de scores salva no arquivo '%s'\n", nomeArquivo);
+}
+
+
 /* programa principal */
 void main(int argc, char *argv[])
 {
