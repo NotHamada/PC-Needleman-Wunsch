@@ -100,7 +100,9 @@ int tamSeqMaior = 6, /* tamanho da sequencia maior, inicializado como 6 */
                         trocas de bases */
     escoreDiag,      /* escore da diagonal anterior da matriz de escores */
     escoreLin,       /* escore da linha anterior da matriz de escores */
-    escoreCol;       /* escore da coluna anterior da matriz de escores */
+    escoreCol,
+    prob,
+    resp_geracao; /* escore da coluna anterior da matriz de escores */
 
 /*  matrizPesos contem os pesos do pareamento de bases. Estruturada e inicializada
     conforme segue, onde cada linha ou coluna se refere a uma das bases A, T, G
@@ -132,14 +134,6 @@ void leTamMaior(int rank)
       printf("\nDigite 0 < valor < %d = ", maxSeq);
       scanf("%d", &tamSeqMaior);
     } while ((tamSeqMaior < 1) || (tamSeqMaior > maxSeq));
-
-    // Broadcast do valor de tamSeqMaior para todos os processos
-    MPI_Bcast(&tamSeqMaior, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  }
-  else
-  {
-    // Recebe o broadcast do valor de tamSeqMaior
-    MPI_Bcast(&tamSeqMaior, 1, MPI_INT, 0, MPI_COMM_WORLD);
   }
 }
 
@@ -153,14 +147,6 @@ void leTamMenor(int rank)
       printf("\nDigite 0 < valor <= %d = ", tamSeqMaior);
       scanf("%d", &tamSeqMenor);
     } while ((tamSeqMenor < 1) || (tamSeqMenor > tamSeqMaior));
-
-    // Broadcast do valor de tamSeqMenor para todos os processos
-    MPI_Bcast(&tamSeqMenor, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  }
-  else
-  {
-    // Recebe o broadcast do valor de tamSeqMenor
-    MPI_Bcast(&tamSeqMenor, 1, MPI_INT, 0, MPI_COMM_WORLD);
   }
 }
 
@@ -237,10 +223,6 @@ void mostraMatrizPesos(void)
 
 int leGrauMutacao(int rank)
 {
-  int prob;
-
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
   if (rank == 0)
   {
     // Somente o processo 0 faz a leitura
@@ -252,14 +234,8 @@ int leGrauMutacao(int rank)
     } while ((prob < 0) || (prob > 100));
   }
 
-  // Broadcast do valor de prob para todos os processos
+  // Broadcast do valor de grauMuta para todos os processos
   MPI_Bcast(&prob, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-  if (rank != 0)
-  {
-    // Print para verificar o valor recebido
-    printf("Processo %d recebeu valor de mutacao: %d\n", rank, prob);
-  }
 
   return prob;
 }
@@ -267,101 +243,97 @@ int leGrauMutacao(int rank)
 /* leitura manual das sequencias de entrada seqMaior e seqMenor */
 void leSequencias(int rank)
 {
-    int i, erro;
-    char seqMaiorAux[maxSeq], seqMenorAux[maxSeq];
+  int i, erro;
+  char seqMaiorAux[maxSeq], seqMenorAux[maxSeq];
 
-    if (rank == 0)
+  if (rank == 0)
+  {
+    // Leitura da sequência maior
+    printf("\nLeitura das Sequencias:\n");
+    do
     {
-        // Leitura da sequência maior
-        printf("\nLeitura das Sequencias:\n");
-        do
+      printf("\nPara a Sequencia Maior,");
+      printf("\nDigite apenas caracteres 'A', 'T', 'G' e 'C'");
+      do
+      {
+        printf("\n> ");
+        fgets(seqMaiorAux, maxSeq, stdin);
+        tamSeqMaior = strlen(seqMaiorAux) - 1; // Remove o newline
+        seqMaiorAux[tamSeqMaior] = '\0';       // Remove o newline do final da string
+      } while (tamSeqMaior < 1);
+      printf("\ntamSeqMaior = %d\n", tamSeqMaior);
+      i = 0;
+      erro = 0;
+      do
+      {
+        switch (seqMaiorAux[i])
         {
-            printf("\nPara a Sequencia Maior,");
-            printf("\nDigite apenas caracteres 'A', 'T', 'G' e 'C'");
-            do
-            {
-                printf("\n> ");
-                fgets(seqMaiorAux, maxSeq, stdin);
-                tamSeqMaior = strlen(seqMaiorAux) - 1; // Remove o newline
-                seqMaiorAux[tamSeqMaior] = '\0';       // Remove o newline do final da string
-            } while (tamSeqMaior < 1);
-            printf("\ntamSeqMaior = %d\n", tamSeqMaior);
-            i = 0;
-            erro = 0;
-            do
-            {
-                switch (seqMaiorAux[i])
-                {
-                case 'A':
-                    seqMaior[i] = A;
-                    break;
-                case 'T':
-                    seqMaior[i] = T;
-                    break;
-                case 'G':
-                    seqMaior[i] = G;
-                    break;
-                case 'C':
-                    seqMaior[i] = C;
-                    break;
-                default:
-                    erro = 1; // Caractere inválido
-                }
-                i++;
-            } while ((erro == 0) && (i < tamSeqMaior));
-        } while (erro == 1);
+        case 'A':
+          seqMaior[i] = A;
+          break;
+        case 'T':
+          seqMaior[i] = T;
+          break;
+        case 'G':
+          seqMaior[i] = G;
+          break;
+        case 'C':
+          seqMaior[i] = C;
+          break;
+        default:
+          erro = 1; // Caractere inválido
+        }
+        i++;
+      } while ((erro == 0) && (i < tamSeqMaior));
+    } while (erro == 1);
 
-        // Leitura da sequência menor
-        do
+    // Leitura da sequência menor
+    do
+    {
+      printf("\nPara a Sequencia Menor, ");
+      printf("\nDigite apenas caracteres 'A', 'T', 'G' e 'C'");
+      do
+      {
+        printf("\n> ");
+        fgets(seqMenorAux, maxSeq, stdin);
+        tamSeqMenor = strlen(seqMenorAux) - 1; // Remove o newline
+        seqMenorAux[tamSeqMenor] = '\0';       // Remove o newline do final da string
+      } while ((tamSeqMenor < 1) || (tamSeqMenor > tamSeqMaior));
+      printf("\ntamSeqMenor = %d\n", tamSeqMenor);
+
+      i = 0;
+      erro = 0;
+      do
+      {
+        switch (seqMenorAux[i])
         {
-            printf("\nPara a Sequencia Menor, ");
-            printf("\nDigite apenas caracteres 'A', 'T', 'G' e 'C'");
-            do
-            {
-                printf("\n> ");
-                fgets(seqMenorAux, maxSeq, stdin);
-                tamSeqMenor = strlen(seqMenorAux) - 1; // Remove o newline
-                seqMenorAux[tamSeqMenor] = '\0';       // Remove o newline do final da string
-            } while ((tamSeqMenor < 1) || (tamSeqMenor > tamSeqMaior));
-            printf("\ntamSeqMenor = %d\n", tamSeqMenor);
+        case 'A':
+          seqMenor[i] = A;
+          break;
+        case 'T':
+          seqMenor[i] = T;
+          break;
+        case 'G':
+          seqMenor[i] = G;
+          break;
+        case 'C':
+          seqMenor[i] = C;
+          break;
+        default:
+          erro = 1; // Caractere inválido
+        }
+        i++;
+      } while ((erro == 0) && (i < tamSeqMenor));
+    } while (erro == 1);
+  }
 
-            i = 0;
-            erro = 0;
-            do
-            {
-                switch (seqMenorAux[i])
-                {
-                case 'A':
-                    seqMenor[i] = A;
-                    break;
-                case 'T':
-                    seqMenor[i] = T;
-                    break;
-                case 'G':
-                    seqMenor[i] = G;
-                    break;
-                case 'C':
-                    seqMenor[i] = C;
-                    break;
-                default:
-                    erro = 1; // Caractere inválido
-                }
-                i++;
-            } while ((erro == 0) && (i < tamSeqMenor));
-        } while (erro == 1);
-    }
+  // Broadcast dos tamanhos das sequências
+  MPI_Bcast(&tamSeqMaior, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&tamSeqMenor, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Broadcast dos tamanhos das sequências
-    MPI_Bcast(&tamSeqMaior, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&tamSeqMenor, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    // Alocar espaço para as sequências nos processos diferentes de rank 0
-    int seqMaior[maxSeq];
-    int seqMenor[maxSeq];
-
-    // Broadcast das sequências
-    MPI_Bcast(seqMaior, maxSeq, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(seqMenor, maxSeq, MPI_INT, 0, MPI_COMM_WORLD);
+  // Broadcast das sequências
+  MPI_Bcast(seqMaior, maxSeq, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(seqMenor, maxSeq, MPI_INT, 0, MPI_COMM_WORLD);
 }
 
 /* geracao das sequencias aleatorias, conforme tamanho. Gera-se numeros aleatorios
@@ -371,13 +343,13 @@ void leSequencias(int rank)
    de mutacao informado. A ideia eh gerar sequencias parecidas, mas com certo grau
    de diferenca. */
 
-void geraSequencias(void)
+void geraSequencias(int rank)
 {
   int i, dif, probAux;
   char base;
-  int rank;
 
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  // Inicializa o gerador de números aleatórios com base no rank do processo
+  srand(time(NULL) + rank); // Isso garante que cada processo tenha uma sequência diferente
 
   if (rank == 0)
   {
@@ -418,13 +390,11 @@ void geraSequencias(void)
     printf("\nSequencias Geradas: Dif = %d, IndRef = %d, NTrocas = %d\n", dif, indRef, nTrocas);
   }
 
-  // Broadcast das variáveis para todos os processos
+  // Broadcast dos tamanhos e sequências para todos os processos
   MPI_Bcast(&tamSeqMaior, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  MPI_Bcast(seqMaior, maxSeq, MPI_CHAR, 0, MPI_COMM_WORLD);
   MPI_Bcast(&tamSeqMenor, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  MPI_Bcast(seqMenor, maxSeq, MPI_CHAR, 0, MPI_COMM_WORLD);
-  MPI_Bcast(&indRef, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  MPI_Bcast(&nTrocas, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(seqMaior, tamSeqMaior, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(seqMenor, tamSeqMenor, MPI_INT, 0, MPI_COMM_WORLD);
 }
 
 /* mostra das sequencias seqMaior e seqMenor */
@@ -467,24 +437,45 @@ void mostraSequencias(void)
 void geraMatrizEscores(int rank, int size)
 {
   int lin, col, peso;
-  int linhas_por_process;
   int escoreDiag, escoreLin, escoreCol;
+  int lin_inicial, lin_final;
 
   // O número de processos exclui o processo 0 (que gerencia)
   int num_processos = size - 1;
 
-  // Calcula quantas linhas cada processo deve calcular
-  linhas_por_process = (tamSeqMenor + num_processos - 1) / num_processos; // Arredonda para cima
+  // Cada processo calcula uma linha de cada vez
+  lin_inicial = rank;
+  lin_final = tamSeqMenor;
 
-  // Cada processo calcula a matriz para suas linhas designadas
-  for (lin = rank; lin < tamSeqMenor; lin += num_processos)
+  // Inicializa a matriz de penalidades no processo 0
+  if (rank == 0)
   {
+    for (col = 0; col <= tamSeqMaior; col++)
+      matrizEscores[0][col] = -1 * (col * penalGap);
+
+    for (lin = 0; lin <= tamSeqMenor; lin++)
+      matrizEscores[lin][0] = -1 * (lin * penalGap);
+  }
+
+  // Sincroniza a matriz de penalidades para todos os processos
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  // Processos começam a calcular suas linhas a partir da segunda linha
+  for (lin = lin_inicial + 1; lin <= lin_final; lin += num_processos)
+  {
+    if (rank != 0)
+    {
+      // Recebe a linha anterior do processo anterior
+      MPI_Recv(matrizEscores[lin - 1], tamSeqMaior + 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+
+    // Calcula a linha atual
     for (col = 1; col <= tamSeqMaior; col++)
     {
-      peso = matrizPesos[seqMenor[lin] - 'A'][seqMaior[col - 1] - 'A'];
-      escoreDiag = matrizEscores[lin][col - 1] + peso;
-      escoreLin = matrizEscores[lin][col - 1] - penalGap;
-      escoreCol = matrizEscores[lin - 1][col] - penalGap;
+      peso = matrizPesos[seqMenor[lin - 1] - 'A'][seqMaior[col - 1] - 'A'];
+      escoreDiag = matrizEscores[lin - 1][col - 1] + peso;
+      escoreLin = matrizEscores[lin - 1][col] - penalGap;
+      escoreCol = matrizEscores[lin][col - 1] - penalGap;
 
       // Escolhe o maior escore
       if ((escoreDiag >= escoreLin) && (escoreDiag >= escoreCol))
@@ -494,32 +485,31 @@ void geraMatrizEscores(int rank, int size)
       else
         matrizEscores[lin][col] = escoreCol;
     }
+
+    // Envia a linha para o próximo processo (se houver)
+    if (rank != num_processos)
+    {
+      MPI_Send(matrizEscores[lin], tamSeqMaior + 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
+    }
   }
 
-  // Processo 0 inicializa a matriz de penalidades
+  // Recolhe as linhas no processo 0 para montagem da matriz final
   if (rank == 0)
   {
-    for (col = 0; col <= tamSeqMaior; col++)
-      matrizEscores[0][col] = -1 * (col * penalGap);
-
-    for (lin = 0; lin <= tamSeqMenor; lin++)
-      matrizEscores[lin][0] = -1 * (lin * penalGap);
-
-    // Recebe as linhas calculadas de cada processo e monta a matriz final
     for (int p = 1; p < size; p++)
     {
-      for (lin = p - 1; lin < tamSeqMenor; lin += num_processos)
+      for (lin = p; lin <= tamSeqMenor; lin += num_processos)
       {
-        MPI_Recv(&matrizEscores[lin][0], (tamSeqMaior + 1), MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(matrizEscores[lin], tamSeqMaior + 1, MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       }
     }
   }
   else
   {
     // Envia as linhas calculadas para o processo 0
-    for (lin = rank - 1; lin < tamSeqMenor; lin += num_processos)
+    for (lin = rank; lin <= tamSeqMenor; lin += num_processos)
     {
-      MPI_Send(&matrizEscores[lin][0], (tamSeqMaior + 1), MPI_INT, 0, 0, MPI_COMM_WORLD);
+      MPI_Send(matrizEscores[lin], tamSeqMaior + 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
     }
   }
 }
@@ -750,6 +740,10 @@ void trataOpcao(int op, int rank, int size)
     printf("\nDeseja Definicao: <1>MANUAL ou <2>ALEATORIA? = ");
     scanf("%d", &resp);
     scanf("%c", &enter); /* remove o enter */
+
+    resp_geracao = resp;
+    MPI_Bcast(&resp_geracao, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
     if (resp == 1)
     {
       leSequencias(rank);
@@ -759,7 +753,7 @@ void trataOpcao(int op, int rank, int size)
       leTamMaior(rank);
       leTamMenor(rank);
       grauMuta = leGrauMutacao(rank);
-      geraSequencias();
+      geraSequencias(rank);
     }
     break;
   case 6:
@@ -825,11 +819,59 @@ void main(int argc, char *argv[])
 
       if (opcao == 5)
       {
-        MPI_Bcast(&tamSeqMaior, 1, MPI_INT, 0, MPI_COMM_WORLD);
-        MPI_Bcast(&tamSeqMenor, 1, MPI_INT, 0, MPI_COMM_WORLD);
-        // // Broadcast das sequências
-        MPI_Bcast(seqMaior, 1000, MPI_INT, 0, MPI_COMM_WORLD);
-        MPI_Bcast(seqMenor, 1000, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Bcast(&resp_geracao, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+        if (resp_geracao == 1)
+        {
+          MPI_Bcast(&tamSeqMaior, 1, MPI_INT, 0, MPI_COMM_WORLD);
+          MPI_Bcast(&tamSeqMenor, 1, MPI_INT, 0, MPI_COMM_WORLD);
+          MPI_Bcast(seqMaior, 1000, MPI_INT, 0, MPI_COMM_WORLD);
+          MPI_Bcast(seqMenor, 1000, MPI_INT, 0, MPI_COMM_WORLD);
+
+          printf("Processo %d", rank);
+          printf("\n");
+
+          for (int i = 0; i < tamSeqMaior; i++)
+          {
+            printf("%d ", seqMaior[i]);
+          }
+
+          printf("\n");
+
+          for (int i = 0; i < tamSeqMenor; i++)
+          {
+            printf("%d ", seqMenor[i]);
+          }
+
+          printf("\n");
+          continue;
+        }
+        if (resp_geracao == 2)
+        {
+          MPI_Bcast(&prob, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+          MPI_Bcast(&tamSeqMaior, 1, MPI_INT, 0, MPI_COMM_WORLD);
+          MPI_Bcast(&tamSeqMenor, 1, MPI_INT, 0, MPI_COMM_WORLD);
+          MPI_Bcast(seqMaior, 1000, MPI_CHAR, 0, MPI_COMM_WORLD);
+          MPI_Bcast(seqMenor, 1000, MPI_CHAR, 0, MPI_COMM_WORLD);
+          printf("Processo %d", rank);
+          printf("\n");
+
+          for (int i = 0; i < tamSeqMaior; i++)
+          {
+            printf("%d ", seqMaior[i]);
+          }
+
+          printf("\n");
+
+          for (int i = 0; i < tamSeqMenor; i++)
+          {
+            printf("%d ", seqMenor[i]);
+          }
+
+          printf("\n");
+          continue;
+        }
       }
 
       trataOpcao(opcao, rank, size);
