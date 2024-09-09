@@ -102,7 +102,8 @@ int tamSeqMaior = 6, /* tamanho da sequencia maior, inicializado como 6 */
     escoreLin,       /* escore da linha anterior da matriz de escores */
     escoreCol,
     prob,
-    resp_geracao; /* escore da coluna anterior da matriz de escores */
+    resp_geracao,
+    blockSize; /* escore da coluna anterior da matriz de escores */
 
 /*  matrizPesos contem os pesos do pareamento de bases. Estruturada e inicializada
     conforme segue, onde cada linha ou coluna se refere a uma das bases A, T, G
@@ -670,6 +671,117 @@ void geraMatrizEscores(int rank, int size)
     printf("\nUltimo Maior escore = %d na celula [%d,%d]", UMaior, linUMaior, colUMaior);
   }
 }
+
+void leTamanhoBloco(int *blockSize)
+{
+  do
+  {
+    printf("\nDigite o tamanho do bloco para a transmissão (>= 1 e <= %d): ", tamSeqMaior);
+    scanf("%d", blockSize);
+  } while (*blockSize < 1);
+
+  MPI_Bcast(blockSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
+}
+
+void geraMatrizEscoresComBlocos(int rank, int size, int blockSize)
+{
+  int lin, col, peso;
+  int escoreDiag, escoreLin, escoreCol;
+  int col_start, col_end;
+
+  // Inicializa a matriz de penalidades no processo 0
+  if (rank == 0)
+  {
+    for (col = 0; col <= tamSeqMaior; col++)
+    {
+      matrizEscores[0][col] = col * penalGap; // Penalidades de gaps na primeira linha
+    }
+    for (lin = 0; lin <= tamSeqMenor; lin++)
+    {
+      matrizEscores[lin][0] = lin * penalGap; // Penalidades de gaps na primeira coluna
+    }
+  }
+
+  // Broadcast da primeira linha para os outros processos
+  MPI_Bcast(matrizEscores[0], tamSeqMaior + 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+  // Cada processo calcula suas linhas de forma equidistante
+  for (lin = 1; lin <= tamSeqMenor; lin++)
+  {
+    // Divisão das colunas em blocos
+    for (col_start = rank * blockSize + 1; col_start <= tamSeqMaior; col_start += blockSize * size)
+    {
+      col_end = col_start + blockSize - 1;
+      if (col_end > tamSeqMaior)
+        col_end = tamSeqMaior;
+
+      // Se não for o primeiro bloco, espera os dados necessários
+      if (col_start > 1 && rank != 0)
+      {
+        MPI_Recv(&matrizEscores[lin][col_start - 1], 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      }
+
+      // Calcular o bloco atual
+      for (col = col_start; col <= col_end; col++)
+      {
+        int baseSeqMenor = seqMenor[lin - 1];
+        int baseSeqMaior = seqMaior[col - 1];
+
+        // Obtenha o peso da matriz de pesos
+        peso = matrizPesos[baseSeqMenor][baseSeqMaior];
+
+        // Calcula os escores possíveis (diagonal, em cima, à esquerda)
+        escoreDiag = matrizEscores[lin - 1][col - 1] + peso;
+        escoreLin = matrizEscores[lin - 1][col] - penalGap;
+        escoreCol = matrizEscores[lin][col - 1] - penalGap;
+
+        // Escolhe o maior escore
+        matrizEscores[lin][col] = escoreDiag;
+        if (escoreLin > matrizEscores[lin][col])
+          matrizEscores[lin][col] = escoreLin;
+        if (escoreCol > matrizEscores[lin][col])
+          matrizEscores[lin][col] = escoreCol;
+      }
+
+      // Enviar o último valor do bloco para o próximo processo
+      if (rank != size - 1 && col_end < tamSeqMaior)
+      {
+        MPI_Send(&matrizEscores[lin][col_end], 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
+      }
+    }
+
+    // Se não for o último processo, envia a linha completa para o próximo
+    if (rank != size - 1)
+    {
+      MPI_Send(matrizEscores[lin], tamSeqMaior + 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
+    }
+
+    // Se não for o primeiro processo, recebe a linha completa do processo anterior
+    if (rank != 0)
+    {
+      MPI_Recv(matrizEscores[lin], tamSeqMaior + 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+  }
+
+  // O processo 0 recebe as linhas em blocos e monta a matriz completa
+  if (rank == 0)
+  {
+    for (int p = 1; p < size; p++)
+    {
+      for (lin = 1; lin <= tamSeqMenor; lin++)
+      {
+        for (col = p * blockSize + 1; col <= tamSeqMaior; col += blockSize * size)
+        {
+          int col_end = col + blockSize - 1;
+          if (col_end > tamSeqMaior)
+            col_end = tamSeqMaior;
+
+          MPI_Recv(&matrizEscores[lin][col], col_end - col + 1, MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+      }
+    }
+  }
+}
 /* imprime a matriz de escores de acordo */
 void mostraMatrizEscores()
 {
@@ -908,10 +1020,11 @@ int menuOpcao(void)
     printf("\n<05> Definir Sequencias Genomicas");
     printf("\n<06> Mostrar Sequencias");
     printf("\n<07> Gerar Matriz de Escores");
-    printf("\n<08> Mostrar Matriz de Escores");
-    printf("\n<09> Gerar Alinhamento Global");
-    printf("\n<10> Mostrar Alinhamento Global");
-    printf("\n<11> Sair");
+    printf("\n<08> Gerar Matriz de Escores com Blocos");
+    printf("\n<09> Mostrar Matriz de Escores");
+    printf("\n<10> Gerar Alinhamento Global");
+    printf("\n<11> Mostrar Alinhamento Global");
+    printf("\n<12> Sair");
     printf("\nDigite a opcao => ");
     scanf("%d", &op);
     scanf("%c", &enter);
@@ -983,10 +1096,19 @@ void trataOpcao(int op, int rank, int size)
     }
     break;
   case 8:
+    // Processo 0 pode salvar a matriz e fazer o traceback
+    geraMatrizEscoresComBlocos(rank, size, blockSize); // Chamada da versão paralela
+    if (rank == 0)
+    {
+      printf("\nGerando matriz de escores em paralelo com MPI...\n");
+      salvaMatrizEmArquivo("matriz_escores.txt");
+    }
+    break;
+  case 9:
     if (rank == 0)
       mostraMatrizEscores();
     break;
-  case 9:
+  case 10:
     if (rank == 0)
     {
       printf("\nDeseja: <1> Primeiro Maior ou <2> Ultimo Maior? = ");
@@ -995,7 +1117,7 @@ void trataOpcao(int op, int rank, int size)
       traceBack(resp);
     }
     break;
-  case 10:
+  case 11:
     if (rank == 0)
       mostraAlinhamentoGlobal();
     break;
@@ -1015,6 +1137,9 @@ void main(int argc, char *argv[])
 
   if (rank == 0)
   {
+    printf("\n\nPrograma Needleman-Wunsch Paralelo\n");
+    leTamanhoBloco(&blockSize); // Solicita o tamanho do bloco ao usuário
+
     do
     {
       printf("\n\nPrograma Needleman-Wunsch Paralelo\n");
@@ -1030,6 +1155,8 @@ void main(int argc, char *argv[])
   }
   else
   {
+    MPI_Bcast(&blockSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
     while (1)
     {
       // Recebe o broadcast da opção
@@ -1039,29 +1166,13 @@ void main(int argc, char *argv[])
       {
         MPI_Bcast(&resp_geracao, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-        if (resp_geracao == 1)
+        if (resp_geracao == 1 || resp_geracao == 3)
         {
           MPI_Bcast(&tamSeqMaior, 1, MPI_INT, 0, MPI_COMM_WORLD);
           MPI_Bcast(&tamSeqMenor, 1, MPI_INT, 0, MPI_COMM_WORLD);
           MPI_Bcast(seqMaior, tamSeqMaior, MPI_INT, 0, MPI_COMM_WORLD);
           MPI_Bcast(seqMenor, tamSeqMenor, MPI_INT, 0, MPI_COMM_WORLD);
 
-          printf("Processo %d", rank);
-          printf("\n");
-
-          for (int i = 0; i < tamSeqMaior; i++)
-          {
-            printf("%d ", seqMaior[i]);
-          }
-
-          printf("\n");
-
-          for (int i = 0; i < tamSeqMenor; i++)
-          {
-            printf("%d ", seqMenor[i]);
-          }
-
-          printf("\n");
           continue;
         }
         if (resp_geracao == 2)
@@ -1072,52 +1183,12 @@ void main(int argc, char *argv[])
           MPI_Bcast(&tamSeqMenor, 1, MPI_INT, 0, MPI_COMM_WORLD);
           MPI_Bcast(seqMaior, tamSeqMaior, MPI_INT, 0, MPI_COMM_WORLD);
           MPI_Bcast(seqMenor, tamSeqMenor, MPI_INT, 0, MPI_COMM_WORLD);
-          printf("Processo %d", rank);
-          printf("\n");
 
-          for (int i = 0; i < tamSeqMaior; i++)
-          {
-            printf("%d ", seqMaior[i]);
-          }
-
-          printf("\n");
-
-          for (int i = 0; i < tamSeqMenor; i++)
-          {
-            printf("%d ", seqMenor[i]);
-          }
-
-          printf("\n");
-          continue;
-        }
-        if (resp_geracao == 3)
-        {
-          MPI_Bcast(&tamSeqMaior, 1, MPI_INT, 0, MPI_COMM_WORLD);
-          MPI_Bcast(&tamSeqMenor, 1, MPI_INT, 0, MPI_COMM_WORLD);
-          MPI_Bcast(seqMaior, tamSeqMaior, MPI_INT, 0, MPI_COMM_WORLD);
-          MPI_Bcast(seqMenor, tamSeqMenor, MPI_INT, 0, MPI_COMM_WORLD);
-
-          printf("Processo %d", rank);
-          printf("\n");
-
-          for (int i = 0; i < tamSeqMaior; i++)
-          {
-            printf("%d ", seqMaior[i]);
-          }
-
-          printf("\n");
-
-          for (int i = 0; i < tamSeqMenor; i++)
-          {
-            printf("%d ", seqMenor[i]);
-          }
-
-          printf("\n");
           continue;
         }
       }
 
-      if (opcao != 9 && opcao != 10)
+      if (opcao != 10 && opcao != 11)
         trataOpcao(opcao, rank, size);
     }
   }
