@@ -546,7 +546,7 @@ void geraMatrizEscores(int rank, int size)
 
   // Cada processo calcula uma linha de cada vez
   lin_inicial = rank;
-  lin_final = tamSeqMenor;
+  lin_final = tamSeqMenor + 1;
 
   // Inicializa a matriz de penalidades no processo 0
   if (rank == 0)
@@ -600,7 +600,10 @@ void geraMatrizEscores(int rank, int size)
     }
   }
 
-  // Recolhe as linhas no processo 0 para montagem da matriz final
+  // Certifique-se de que todos os processos calcularam suas respectivas linhas
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  // O processo 0 coleta todas as linhas e monta a matriz completa
   if (rank == 0)
   {
     for (int p = 1; p < size; p++)
