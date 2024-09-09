@@ -559,11 +559,24 @@ void geraMatrizEscores(int rank, int size)
       matrizEscores[lin][0] = lin * penalGap; // Penalidades de gaps na primeira coluna
   }
 
-  // Sincroniza a matriz de penalidades para todos os processos
-  MPI_Barrier(MPI_COMM_WORLD);
+  // Envia as penalidades iniciais da matriz para os outros processos
+  if (rank == 0)
+  {
+    for (int dest = 1; dest < size; dest++)
+    {
+      for (col = 0; col <= tamSeqMaior; col++)
+      {
+        MPI_Send(matrizEscores[0], tamSeqMaior + 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
+      }
+    }
+  }
+  else
+  {
+    MPI_Recv(matrizEscores[0], tamSeqMaior + 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  }
 
   // Processos começam a calcular suas linhas a partir da segunda linha
-  for (lin = lin_inicial + 1; lin <= lin_final; lin += size - 1)
+  for (lin = lin_inicial; lin <= lin_final; lin += size - 1)
   {
     if (rank != 0)
     {
@@ -601,9 +614,6 @@ void geraMatrizEscores(int rank, int size)
     }
   }
 
-  // Certifique-se de que todos os processos calcularam suas respectivas linhas
-  MPI_Barrier(MPI_COMM_WORLD);
-
   // O processo 0 coleta todas as linhas e monta a matriz completa
   if (rank == 0)
   {
@@ -624,36 +634,41 @@ void geraMatrizEscores(int rank, int size)
     }
   }
 
-  linPMaior = 1;
-  colPMaior = 1;
-  PMaior = matrizEscores[1][1];
-
-  linUMaior = 1;
-  colUMaior = 1;
-  UMaior = matrizEscores[1][1];
-
-  for (int lin = 1; lin <= tamSeqMenor; lin++)
+  if (rank == 0)
   {
-    for (int col = 1; col <= tamSeqMaior; col++)
+
+    // Definir o maior e o menor valor da matriz
+    linPMaior = 1;
+    colPMaior = 1;
+    PMaior = matrizEscores[1][1];
+
+    linUMaior = 1;
+    colUMaior = 1;
+    UMaior = matrizEscores[1][1];
+
+    for (int lin = 1; lin <= tamSeqMenor; lin++)
     {
-      if (PMaior < matrizEscores[lin][col])
+      for (int col = 1; col <= tamSeqMaior; col++)
       {
-        linPMaior = lin;
-        colPMaior = col;
-        PMaior = matrizEscores[lin][col];
-      }
-      if (UMaior <= matrizEscores[lin][col])
-      {
-        linUMaior = lin;
-        colUMaior = col;
-        UMaior = matrizEscores[lin][col];
+        if (PMaior < matrizEscores[lin][col])
+        {
+          linPMaior = lin;
+          colPMaior = col;
+          PMaior = matrizEscores[lin][col];
+        }
+        if (UMaior <= matrizEscores[lin][col])
+        {
+          linUMaior = lin;
+          colUMaior = col;
+          UMaior = matrizEscores[lin][col];
+        }
       }
     }
-  }
 
-  printf("\nMatriz de escores Gerada.");
-  printf("\nPrimeiro Maior escore = %d na celula [%d,%d]", PMaior, linPMaior, colPMaior);
-  printf("\nUltimo Maior escore = %d na celula [%d,%d]", UMaior, linUMaior, colUMaior);
+    printf("\nMatriz de escores Gerada.");
+    printf("\nPrimeiro Maior escore = %d na celula [%d,%d]", PMaior, linPMaior, colPMaior);
+    printf("\nUltimo Maior escore = %d na celula [%d,%d]", UMaior, linUMaior, colUMaior);
+  }
 }
 /* imprime a matriz de escores de acordo */
 void mostraMatrizEscores()
@@ -959,9 +974,6 @@ void trataOpcao(int op, int rank, int size)
       mostraSequencias();
     break;
   case 7:
-    // Sincronizar antes de calcular o traceback
-    MPI_Barrier(MPI_COMM_WORLD);
-
     // Processo 0 pode salvar a matriz e fazer o traceback
     geraMatrizEscores(rank, size); // Chamada da versão paralela
     if (rank == 0)
